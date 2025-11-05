@@ -1,6 +1,11 @@
 const { Plugin, Setting, Modal, Notice, PluginSettingTab } = require('obsidian');
 
 const DEFAULT_SETTINGS = {
+	oldSalahPeriod: {
+		days: 0,
+		months: 0,
+		years: 0
+	},
 	oldSalahs: {
 		fajr: 0,
 		dhuhr: 0,
@@ -24,15 +29,15 @@ class IslamPlugin extends Plugin {
 		this.addSettingTab(new IslamSettingTab(this.app, this));
 		
 		this.addCommand({
-			id: 'add-old-salah',
-			name: 'Add Old Salah',
-			callback: () => new SalahModal(this, 'old').open()
+			id: 'complete-salah',
+			name: 'Complete Salah',
+			callback: () => new CompleteSalahModal(this).open()
 		});
 		
 		this.addCommand({
-			id: 'add-active-salah',
-			name: 'Add Active Salah',
-			callback: () => new SalahModal(this, 'active').open()
+			id: 'manage-salahs',
+			name: 'Manage Salahs (CRUD)',
+			callback: () => new ManageSalahModal(this).open()
 		});
 		
 		this.addCommand({
@@ -40,12 +45,18 @@ class IslamPlugin extends Plugin {
 			name: 'Show Salah Dashboard',
 			callback: () => new DashboardModal(this).open()
 		});
-		
-		this.addCommand({
-			id: 'calculate-old-salahs',
-			name: 'Calculate Old Salahs by Time Period',
-			callback: () => new CalculateModal(this).open()
-		});
+	}
+	
+	calculateOldSalahs() {
+		const { days, months, years } = this.settings.oldSalahPeriod;
+		const totalDays = days + (months * 30) + (years * 365);
+		return {
+			fajr: totalDays,
+			dhuhr: totalDays,
+			asr: totalDays,
+			maghrib: totalDays,
+			isha: totalDays
+		};
 	}
 	
 	async loadSettings() {
@@ -71,32 +82,73 @@ class IslamSettingTab extends PluginSettingTab {
 		
 		containerEl.createEl('h3', { text: 'Salah Settings' });
 		
+		// Old Salahs Period Input
+		containerEl.createEl('h4', { text: 'Old Salahs Time Period' });
+		
+		new Setting(containerEl)
+			.setName('Days')
+			.addText(text => {
+				text.setPlaceholder('0')
+					.setValue(this.plugin.settings.oldSalahPeriod.days.toString())
+					.onChange(async (value) => {
+						this.plugin.settings.oldSalahPeriod.days = parseInt(value) || 0;
+						await this.plugin.saveSettings();
+						this.display();
+					});
+				text.inputEl.type = 'number';
+			});
+		
+		new Setting(containerEl)
+			.setName('Months')
+			.addText(text => {
+				text.setPlaceholder('0')
+					.setValue(this.plugin.settings.oldSalahPeriod.months.toString())
+					.onChange(async (value) => {
+						this.plugin.settings.oldSalahPeriod.months = parseInt(value) || 0;
+						await this.plugin.saveSettings();
+						this.display();
+					});
+				text.inputEl.type = 'number';
+			});
+		
+		new Setting(containerEl)
+			.setName('Years')
+			.addText(text => {
+				text.setPlaceholder('0')
+					.setValue(this.plugin.settings.oldSalahPeriod.years.toString())
+					.onChange(async (value) => {
+						this.plugin.settings.oldSalahPeriod.years = parseInt(value) || 0;
+						await this.plugin.saveSettings();
+						this.display();
+					});
+				text.inputEl.type = 'number';
+			});
+		
+		// Calculated Old Salahs (Read-only)
+		containerEl.createEl('h4', { text: 'Calculated Old Salahs (Read-only)' });
+		const calculatedOld = this.plugin.calculateOldSalahs();
 		const salahTypes = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 		
-		containerEl.createEl('h4', { text: 'Old Salahs' });
 		salahTypes.forEach(salah => {
 			new Setting(containerEl)
 				.setName(salah.charAt(0).toUpperCase() + salah.slice(1))
-				.addText(text => text
-					.setPlaceholder('0')
-					.setValue(this.plugin.settings.oldSalahs[salah].toString())
-					.onChange(async (value) => {
-						this.plugin.settings.oldSalahs[salah] = parseInt(value) || 0;
-						await this.plugin.saveSettings();
-					}));
+				.setDesc(`${calculatedOld[salah]} prayers`);
 		});
 		
+		// Active Salahs
 		containerEl.createEl('h4', { text: 'Active Salahs' });
 		salahTypes.forEach(salah => {
 			new Setting(containerEl)
 				.setName(salah.charAt(0).toUpperCase() + salah.slice(1))
-				.addText(text => text
-					.setPlaceholder('0')
-					.setValue(this.plugin.settings.activeSalahs[salah].toString())
-					.onChange(async (value) => {
-						this.plugin.settings.activeSalahs[salah] = parseInt(value) || 0;
-						await this.plugin.saveSettings();
-					}));
+				.addText(text => {
+					text.setPlaceholder('0')
+						.setValue(this.plugin.settings.activeSalahs[salah].toString())
+						.onChange(async (value) => {
+							this.plugin.settings.activeSalahs[salah] = parseInt(value) || 0;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'number';
+				});
 		});
 		
 		containerEl.createEl('h3', { text: 'Quran Settings' });
@@ -104,18 +156,25 @@ class IslamSettingTab extends PluginSettingTab {
 	}
 }
 
-class SalahModal extends Modal {
-	constructor(plugin, type) {
+class CompleteSalahModal extends Modal {
+	constructor(plugin) {
 		super(plugin.app);
 		this.plugin = plugin;
-		this.type = type;
 	}
 	
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl('h2', { text: `Add ${this.type.charAt(0).toUpperCase() + this.type.slice(1)} Salah` });
+		contentEl.createEl('h2', { text: 'Complete Salah' });
 		
 		const form = contentEl.createEl('form');
+		
+		const typeSelect = form.createEl('select');
+		const oldOption = typeSelect.createEl('option');
+		oldOption.value = 'old';
+		oldOption.text = 'Old Salah';
+		const activeOption = typeSelect.createEl('option');
+		activeOption.value = 'active';
+		activeOption.text = 'Active Salah';
 		
 		const salahSelect = form.createEl('select');
 		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
@@ -130,19 +189,36 @@ class SalahModal extends Modal {
 		countInput.min = '1';
 		
 		const submitBtn = form.createEl('button');
-		submitBtn.textContent = 'Add';
+		submitBtn.textContent = 'Complete';
 		submitBtn.type = 'submit';
 		
 		form.onsubmit = async (e) => {
 			e.preventDefault();
+			const type = typeSelect.value;
 			const salah = salahSelect.value;
 			const count = parseInt(countInput.value) || 0;
 			
 			if (count > 0) {
-				this.plugin.settings[`${this.type}Salahs`][salah] += count;
-				await this.plugin.saveSettings();
-				new Notice(`Added ${count} ${salah} ${this.type} salah(s)`);
-				this.close();
+				if (type === 'old') {
+					const calculatedOld = this.plugin.calculateOldSalahs();
+					if (calculatedOld[salah] >= count) {
+						this.plugin.settings.oldSalahs[salah] += count;
+						await this.plugin.saveSettings();
+						new Notice(`Completed ${count} old ${salah} salah(s)`);
+						this.close();
+					} else {
+						new Notice(`Only ${calculatedOld[salah]} old ${salah} salahs available`);
+					}
+				} else {
+					if (this.plugin.settings.activeSalahs[salah] >= count) {
+						this.plugin.settings.activeSalahs[salah] -= count;
+						await this.plugin.saveSettings();
+						new Notice(`Completed ${count} active ${salah} salah(s)`);
+						this.close();
+					} else {
+						new Notice(`Only ${this.plugin.settings.activeSalahs[salah]} active ${salah} salahs available`);
+					}
+				}
 			}
 		};
 	}
@@ -153,7 +229,7 @@ class SalahModal extends Modal {
 	}
 }
 
-class CalculateModal extends Modal {
+class ManageSalahModal extends Modal {
 	constructor(plugin) {
 		super(plugin.app);
 		this.plugin = plugin;
@@ -161,45 +237,55 @@ class CalculateModal extends Modal {
 	
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl('h2', { text: 'Calculate Old Salahs by Time Period' });
+		contentEl.createEl('h2', { text: 'Manage Salahs (CRUD)' });
 		
 		const form = contentEl.createEl('form');
 		
-		const daysInput = form.createEl('input');
-		daysInput.type = 'number';
-		daysInput.placeholder = 'Days';
-		daysInput.min = '0';
+		const actionSelect = form.createEl('select');
+		['add', 'remove', 'set'].forEach(action => {
+			const option = actionSelect.createEl('option');
+			option.value = action;
+			option.text = action.charAt(0).toUpperCase() + action.slice(1);
+		});
 		
-		const monthsInput = form.createEl('input');
-		monthsInput.type = 'number';
-		monthsInput.placeholder = 'Months';
-		monthsInput.min = '0';
+		const typeSelect = form.createEl('select');
+		const activeOption = typeSelect.createEl('option');
+		activeOption.value = 'active';
+		activeOption.text = 'Active Salah';
 		
-		const yearsInput = form.createEl('input');
-		yearsInput.type = 'number';
-		yearsInput.placeholder = 'Years';
-		yearsInput.min = '0';
+		const salahSelect = form.createEl('select');
+		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
+			const option = salahSelect.createEl('option');
+			option.value = salah;
+			option.text = salah.charAt(0).toUpperCase() + salah.slice(1);
+		});
+		
+		const countInput = form.createEl('input');
+		countInput.type = 'number';
+		countInput.placeholder = 'Count';
+		countInput.min = '0';
 		
 		const submitBtn = form.createEl('button');
-		submitBtn.textContent = 'Calculate & Add';
+		submitBtn.textContent = 'Execute';
 		submitBtn.type = 'submit';
 		
 		form.onsubmit = async (e) => {
 			e.preventDefault();
-			const days = parseInt(daysInput.value) || 0;
-			const months = parseInt(monthsInput.value) || 0;
-			const years = parseInt(yearsInput.value) || 0;
+			const action = actionSelect.value;
+			const salah = salahSelect.value;
+			const count = parseInt(countInput.value) || 0;
 			
-			const totalDays = days + (months * 30) + (years * 365);
-			
-			if (totalDays > 0) {
-				['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
-					this.plugin.settings.oldSalahs[salah] += totalDays;
-				});
-				await this.plugin.saveSettings();
-				new Notice(`Added ${totalDays * 5} old salahs (${totalDays} days)`);
-				this.close();
+			if (action === 'add') {
+				this.plugin.settings.activeSalahs[salah] += count;
+			} else if (action === 'remove') {
+				this.plugin.settings.activeSalahs[salah] = Math.max(0, this.plugin.settings.activeSalahs[salah] - count);
+			} else if (action === 'set') {
+				this.plugin.settings.activeSalahs[salah] = count;
 			}
+			
+			await this.plugin.saveSettings();
+			new Notice(`${action.charAt(0).toUpperCase() + action.slice(1)} ${count} active ${salah} salah(s)`);
+			this.close();
 		};
 	}
 	
@@ -219,49 +305,55 @@ class DashboardModal extends Modal {
 		const { contentEl } = this;
 		contentEl.createEl('h2', { text: 'Salah Dashboard' });
 		
-		const { oldSalahs, activeSalahs } = this.plugin.settings;
+		const calculatedOld = this.plugin.calculateOldSalahs();
+		const { activeSalahs, oldSalahs } = this.plugin.settings;
 		
-		contentEl.createEl('h3', { text: 'Old Salahs (Pending)' });
+		contentEl.createEl('h3', { text: 'Old Salahs Status' });
 		const oldTable = contentEl.createEl('table');
 		oldTable.style.width = '100%';
 		oldTable.style.borderCollapse = 'collapse';
 		
 		const oldHeader = oldTable.createEl('tr');
 		oldHeader.createEl('th', { text: 'Prayer' }).style.border = '1px solid #ccc';
-		oldHeader.createEl('th', { text: 'Count' }).style.border = '1px solid #ccc';
+		oldHeader.createEl('th', { text: 'Total' }).style.border = '1px solid #ccc';
+		oldHeader.createEl('th', { text: 'Completed' }).style.border = '1px solid #ccc';
+		oldHeader.createEl('th', { text: 'Remaining' }).style.border = '1px solid #ccc';
 		
 		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
 			const row = oldTable.createEl('tr');
-			const nameCell = row.createEl('td', { text: salah.charAt(0).toUpperCase() + salah.slice(1) });
-			const countCell = row.createEl('td', { text: oldSalahs[salah].toString() });
-			nameCell.style.border = '1px solid #ccc';
-			countCell.style.border = '1px solid #ccc';
+			const total = calculatedOld[salah];
+			const completed = oldSalahs[salah];
+			const remaining = Math.max(0, total - completed);
+			
+			row.createEl('td', { text: salah.charAt(0).toUpperCase() + salah.slice(1) }).style.border = '1px solid #ccc';
+			row.createEl('td', { text: total.toString() }).style.border = '1px solid #ccc';
+			row.createEl('td', { text: completed.toString() }).style.border = '1px solid #ccc';
+			row.createEl('td', { text: remaining.toString() }).style.border = '1px solid #ccc';
 		});
 		
-		contentEl.createEl('h3', { text: 'Active Salahs (Recent Missed)' });
+		contentEl.createEl('h3', { text: 'Active Salahs Status' });
 		const activeTable = contentEl.createEl('table');
 		activeTable.style.width = '100%';
 		activeTable.style.borderCollapse = 'collapse';
 		
 		const activeHeader = activeTable.createEl('tr');
 		activeHeader.createEl('th', { text: 'Prayer' }).style.border = '1px solid #ccc';
-		activeHeader.createEl('th', { text: 'Count' }).style.border = '1px solid #ccc';
+		activeHeader.createEl('th', { text: 'Remaining' }).style.border = '1px solid #ccc';
 		
 		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
 			const row = activeTable.createEl('tr');
-			const nameCell = row.createEl('td', { text: salah.charAt(0).toUpperCase() + salah.slice(1) });
-			const countCell = row.createEl('td', { text: activeSalahs[salah].toString() });
-			nameCell.style.border = '1px solid #ccc';
-			countCell.style.border = '1px solid #ccc';
+			row.createEl('td', { text: salah.charAt(0).toUpperCase() + salah.slice(1) }).style.border = '1px solid #ccc';
+			row.createEl('td', { text: activeSalahs[salah].toString() }).style.border = '1px solid #ccc';
 		});
 		
-		const totalOld = Object.values(oldSalahs).reduce((sum, count) => sum + count, 0);
-		const totalActive = Object.values(activeSalahs).reduce((sum, count) => sum + count, 0);
+		const totalOldRemaining = Object.keys(calculatedOld).reduce((sum, salah) => 
+			sum + Math.max(0, calculatedOld[salah] - oldSalahs[salah]), 0);
+		const totalActiveRemaining = Object.values(activeSalahs).reduce((sum, count) => sum + count, 0);
 		
 		contentEl.createEl('h3', { text: 'Summary' });
-		contentEl.createEl('p', { text: `Total Old Salahs: ${totalOld}` });
-		contentEl.createEl('p', { text: `Total Active Salahs: ${totalActive}` });
-		contentEl.createEl('p', { text: `Grand Total: ${totalOld + totalActive}` });
+		contentEl.createEl('p', { text: `Total Old Salahs Remaining: ${totalOldRemaining}` });
+		contentEl.createEl('p', { text: `Total Active Salahs Remaining: ${totalActiveRemaining}` });
+		contentEl.createEl('p', { text: `Grand Total Remaining: ${totalOldRemaining + totalActiveRemaining}` });
 	}
 	
 	onClose() {
