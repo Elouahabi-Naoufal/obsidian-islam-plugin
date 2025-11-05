@@ -1,0 +1,43 @@
+.islam-plugin-dashboard table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+}
+
+.islam-plugin-dashboard th,
+.islam-plugin-dashboard td {
+    border: 1px solid var(--background-modifier-border);
+    padding: 8px;
+    text-align: left;
+}
+
+.islam-plugin-dashboard th {
+    background-color: var(--background-modifier-border);
+    font-weight: bold;
+}
+
+.islam-plugin-modal form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.islam-plugin-modal input,
+.islam-plugin-modal select {
+    padding: 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+.islam-plugin-modal button {
+    padding: 10px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.islam-plugin-modal button:hover {
+    background-color: var(--interactive-accent-hover);
+}

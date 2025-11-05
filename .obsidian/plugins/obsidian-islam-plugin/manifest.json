@@ -1,0 +1,11 @@
+{
+	"id": "obsidian-islam-plugin",
+	"name": "Islam Plugin",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Track Salah prayers and Islamic practices",
+	"author": "Naoufal Elouahabi",
+	"authorUrl": "https://github.com/Elouahabi-Naoufal",
+	"fundingUrl": "https://paypal.me/NaoufalElouahabi",
+	"isDesktopOnly": false
+}
