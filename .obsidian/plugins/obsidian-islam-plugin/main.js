@@ -301,59 +301,229 @@ class DashboardModal extends Modal {
 		this.plugin = plugin;
 	}
 	
+	createCircularProgress(container, salah, completed, total, type) {
+		const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+		const remaining = Math.max(0, total - completed);
+		
+		const card = container.createEl('div');
+		card.style.cssText = `
+			background: var(--background-secondary);
+			border-radius: 12px;
+			padding: 20px;
+			text-align: center;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+			border: 1px solid var(--background-modifier-border);
+			transition: transform 0.2s ease;
+			min-width: 150px;
+		`;
+		
+		const circle = card.createEl('div');
+		circle.style.cssText = `
+			position: relative;
+			display: inline-block;
+			margin-bottom: 15px;
+			width: 120px;
+			height: 120px;
+			border-radius: 50%;
+			background: conic-gradient(
+				${percentage >= 80 ? '#22c55e' : percentage >= 50 ? '#f59e0b' : '#ef4444'} ${percentage * 3.6}deg,
+				#333 ${percentage * 3.6}deg
+			);
+			padding: 10px;
+		`;
+		
+		const innerCircle = circle.createEl('div');
+		innerCircle.style.cssText = `
+			width: 100px;
+			height: 100px;
+			border-radius: 50%;
+			background: var(--background-secondary);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: relative;
+		`;
+		
+		const centerText = innerCircle.createEl('div');
+		centerText.style.cssText = `
+			text-align: center;
+		`;
+		
+		const percentageEl = centerText.createEl('div', { text: `${percentage}%` });
+		percentageEl.style.cssText = `
+			font-size: 16px;
+			font-weight: bold;
+			color: var(--text-accent);
+			line-height: 1;
+		`;
+		
+		const fractionEl = centerText.createEl('div', { text: `${completed}/${total}` });
+		fractionEl.style.cssText = `
+			font-size: 10px;
+			color: var(--text-muted);
+			margin-top: 2px;
+		`;
+		
+		const nameEl = card.createEl('h4', { text: salah.charAt(0).toUpperCase() + salah.slice(1) });
+		nameEl.style.cssText = `
+			font-size: 16px;
+			font-weight: 600;
+			margin: 0 0 8px 0;
+			color: var(--text-normal);
+		`;
+		
+		const remainingEl = card.createEl('p', { text: `${remaining} remaining` });
+		remainingEl.style.cssText = `
+			font-size: 14px;
+			color: var(--text-muted);
+			margin: 0 0 8px 0;
+		`;
+		
+		const typeEl = card.createEl('span', { text: type });
+		typeEl.style.cssText = `
+			display: inline-block;
+			padding: 4px 8px;
+			border-radius: 12px;
+			font-size: 11px;
+			font-weight: 500;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			background: ${type === 'Old' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)'};
+			color: ${type === 'Old' ? '#3b82f6' : '#a855f7'};
+		`;
+	}
+	
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl('h2', { text: 'Salah Dashboard' });
+		contentEl.style.cssText = `
+			padding: 20px;
+			max-width: 800px;
+		`;
+		
+		const title = contentEl.createEl('h2', { text: 'Salah Dashboard' });
+		title.style.cssText = `
+			text-align: center;
+			margin-bottom: 30px;
+			color: var(--text-accent);
+			font-size: 28px;
+			font-weight: 600;
+		`;
 		
 		const calculatedOld = this.plugin.calculateOldSalahs();
 		const { activeSalahs, oldSalahs } = this.plugin.settings;
 		
-		contentEl.createEl('h3', { text: 'Old Salahs Status' });
-		const oldTable = contentEl.createEl('table');
-		oldTable.style.width = '100%';
-		oldTable.style.borderCollapse = 'collapse';
+		const oldTitle = contentEl.createEl('h3', { text: 'Old Salahs Progress' });
+		oldTitle.style.cssText = `
+			margin: 25px 0 15px 0;
+			color: var(--text-normal);
+			font-size: 20px;
+			font-weight: 500;
+			border-bottom: 2px solid var(--background-modifier-border);
+			padding-bottom: 8px;
+		`;
 		
-		const oldHeader = oldTable.createEl('tr');
-		oldHeader.createEl('th', { text: 'Prayer' }).style.border = '1px solid #ccc';
-		oldHeader.createEl('th', { text: 'Total' }).style.border = '1px solid #ccc';
-		oldHeader.createEl('th', { text: 'Completed' }).style.border = '1px solid #ccc';
-		oldHeader.createEl('th', { text: 'Remaining' }).style.border = '1px solid #ccc';
+		const oldGrid = contentEl.createEl('div');
+		oldGrid.style.cssText = `
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+			gap: 20px;
+			margin-bottom: 30px;
+		`;
 		
 		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
-			const row = oldTable.createEl('tr');
 			const total = calculatedOld[salah];
 			const completed = oldSalahs[salah];
-			const remaining = Math.max(0, total - completed);
-			
-			row.createEl('td', { text: salah.charAt(0).toUpperCase() + salah.slice(1) }).style.border = '1px solid #ccc';
-			row.createEl('td', { text: total.toString() }).style.border = '1px solid #ccc';
-			row.createEl('td', { text: completed.toString() }).style.border = '1px solid #ccc';
-			row.createEl('td', { text: remaining.toString() }).style.border = '1px solid #ccc';
+			this.createCircularProgress(oldGrid, salah, completed, total, 'Old');
 		});
 		
-		contentEl.createEl('h3', { text: 'Active Salahs Status' });
-		const activeTable = contentEl.createEl('table');
-		activeTable.style.width = '100%';
-		activeTable.style.borderCollapse = 'collapse';
+		const activeTitle = contentEl.createEl('h3', { text: 'Active Salahs Status' });
+		activeTitle.style.cssText = `
+			margin: 25px 0 15px 0;
+			color: var(--text-normal);
+			font-size: 20px;
+			font-weight: 500;
+			border-bottom: 2px solid var(--background-modifier-border);
+			padding-bottom: 8px;
+		`;
 		
-		const activeHeader = activeTable.createEl('tr');
-		activeHeader.createEl('th', { text: 'Prayer' }).style.border = '1px solid #ccc';
-		activeHeader.createEl('th', { text: 'Remaining' }).style.border = '1px solid #ccc';
+		const activeGrid = contentEl.createEl('div');
+		activeGrid.style.cssText = `
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+			gap: 20px;
+			margin-bottom: 30px;
+		`;
 		
 		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
-			const row = activeTable.createEl('tr');
-			row.createEl('td', { text: salah.charAt(0).toUpperCase() + salah.slice(1) }).style.border = '1px solid #ccc';
-			row.createEl('td', { text: activeSalahs[salah].toString() }).style.border = '1px solid #ccc';
+			const remaining = activeSalahs[salah];
+			this.createCircularProgress(activeGrid, salah, 0, remaining, 'Active');
 		});
 		
 		const totalOldRemaining = Object.keys(calculatedOld).reduce((sum, salah) => 
 			sum + Math.max(0, calculatedOld[salah] - oldSalahs[salah]), 0);
 		const totalActiveRemaining = Object.values(activeSalahs).reduce((sum, count) => sum + count, 0);
 		
-		contentEl.createEl('h3', { text: 'Summary' });
-		contentEl.createEl('p', { text: `Total Old Salahs Remaining: ${totalOldRemaining}` });
-		contentEl.createEl('p', { text: `Total Active Salahs Remaining: ${totalActiveRemaining}` });
-		contentEl.createEl('p', { text: `Grand Total Remaining: ${totalOldRemaining + totalActiveRemaining}` });
+		const summary = contentEl.createEl('div');
+		summary.style.cssText = `margin-top: 40px;`;
+		
+		const summaryTitle = summary.createEl('h3', { text: 'Summary' });
+		summaryTitle.style.cssText = `
+			margin: 25px 0 15px 0;
+			color: var(--text-normal);
+			font-size: 20px;
+			font-weight: 500;
+			border-bottom: 2px solid var(--background-modifier-border);
+			padding-bottom: 8px;
+		`;
+		
+		const summaryGrid = summary.createEl('div');
+		summaryGrid.style.cssText = `
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+			gap: 15px;
+		`;
+		
+		const oldSummary = summaryGrid.createEl('div');
+		oldSummary.style.cssText = `
+			background: var(--background-secondary);
+			border-radius: 10px;
+			padding: 20px;
+			text-align: center;
+			border: 1px solid var(--background-modifier-border);
+			border-left: 4px solid #3b82f6;
+		`;
+		const oldNumber = oldSummary.createEl('div', { text: totalOldRemaining.toString() });
+		oldNumber.style.cssText = `font-size: 32px; font-weight: bold; color: var(--text-accent);`;
+		const oldLabel = oldSummary.createEl('div', { text: 'Old Salahs Remaining' });
+		oldLabel.style.cssText = `font-size: 14px; color: var(--text-muted); margin-top: 8px;`;
+		
+		const activeSummary = summaryGrid.createEl('div');
+		activeSummary.style.cssText = `
+			background: var(--background-secondary);
+			border-radius: 10px;
+			padding: 20px;
+			text-align: center;
+			border: 1px solid var(--background-modifier-border);
+			border-left: 4px solid #a855f7;
+		`;
+		const activeNumber = activeSummary.createEl('div', { text: totalActiveRemaining.toString() });
+		activeNumber.style.cssText = `font-size: 32px; font-weight: bold; color: var(--text-accent);`;
+		const activeLabel = activeSummary.createEl('div', { text: 'Active Salahs Remaining' });
+		activeLabel.style.cssText = `font-size: 14px; color: var(--text-muted); margin-top: 8px;`;
+		
+		const totalSummary = summaryGrid.createEl('div');
+		totalSummary.style.cssText = `
+			background: var(--background-secondary);
+			border-radius: 10px;
+			padding: 20px;
+			text-align: center;
+			border: 1px solid var(--background-modifier-border);
+			border-left: 4px solid #f59e0b;
+		`;
+		const totalNumber = totalSummary.createEl('div', { text: (totalOldRemaining + totalActiveRemaining).toString() });
+		totalNumber.style.cssText = `font-size: 32px; font-weight: bold; color: var(--text-accent);`;
+		const totalLabel = totalSummary.createEl('div', { text: 'Total Remaining' });
+		totalLabel.style.cssText = `font-size: 14px; color: var(--text-muted); margin-top: 8px;`;
 	}
 	
 	onClose() {

@@ -1,19 +1,153 @@
-.islam-plugin-dashboard table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 1rem;
+.salah-dashboard {
+    padding: 20px;
+    max-width: 800px;
 }
 
-.islam-plugin-dashboard th,
-.islam-plugin-dashboard td {
+.dashboard-title {
+    text-align: center;
+    margin-bottom: 30px;
+    color: var(--text-accent);
+    font-size: 28px;
+    font-weight: 600;
+}
+
+.section-title {
+    margin: 25px 0 15px 0;
+    color: var(--text-normal);
+    font-size: 20px;
+    font-weight: 500;
+    border-bottom: 2px solid var(--background-modifier-border);
+    padding-bottom: 8px;
+}
+
+.salah-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.salah-card {
+    background: var(--background-secondary);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     border: 1px solid var(--background-modifier-border);
-    padding: 8px;
-    text-align: left;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.islam-plugin-dashboard th {
-    background-color: var(--background-modifier-border);
+.salah-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.circle-container {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 15px;
+}
+
+.progress-circle {
+    transform: rotate(-90deg);
+}
+
+.circle-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+.percentage {
+    font-size: 18px;
     font-weight: bold;
+    color: var(--text-accent);
+    line-height: 1;
+}
+
+.fraction {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.salah-name {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: var(--text-normal);
+}
+
+.remaining-text {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
+
+.salah-type {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.salah-type:contains('Old') {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+
+.salah-type:contains('Active') {
+    background: rgba(168, 85, 247, 0.1);
+    color: #a855f7;
+}
+
+.summary-section {
+    margin-top: 40px;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.summary-card {
+    background: var(--background-secondary);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.summary-card.old {
+    border-left: 4px solid #3b82f6;
+}
+
+.summary-card.active {
+    border-left: 4px solid #a855f7;
+}
+
+.summary-card.total {
+    border-left: 4px solid #f59e0b;
+}
+
+.summary-number {
+    font-size: 32px;
+    font-weight: bold;
+    color: var(--text-accent);
+    line-height: 1;
+}
+
+.summary-label {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-top: 8px;
+    font-weight: 500;
 }
 
 .islam-plugin-modal form {
