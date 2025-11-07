@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS = {
 		asr: 0,
 		maghrib: 0,
 		isha: 0
-	}
+	},
+	progressHistory: []
 };
 
 class IslamPlugin extends Plugin {
@@ -45,6 +46,30 @@ class IslamPlugin extends Plugin {
 			name: 'Show Salah Dashboard',
 			callback: () => new DashboardModal(this).open()
 		});
+		
+		this.addCommand({
+			id: 'reset-salahs',
+			name: 'Delete/Reset Salahs',
+			callback: () => new ResetModal(this).open()
+		});
+		
+		this.addCommand({
+			id: 'bulk-complete',
+			name: 'Bulk Complete Salahs',
+			callback: () => new BulkCompleteModal(this).open()
+		});
+		
+		this.addCommand({
+			id: 'prayer-times',
+			name: 'Show Prayer Times',
+			callback: () => new PrayerTimesModal(this).open()
+		});
+		
+		this.addCommand({
+			id: 'progress-history',
+			name: 'Show Progress History',
+			callback: () => new ProgressHistoryModal(this).open()
+		});
 	}
 	
 	calculateOldSalahs() {
@@ -61,6 +86,22 @@ class IslamPlugin extends Plugin {
 	
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+	
+	trackProgress(action, salah, count, type) {
+		const entry = {
+			date: new Date().toISOString(),
+			action,
+			salah,
+			count,
+			type
+		};
+		this.settings.progressHistory.push(entry);
+		
+		// Keep only last 100 entries
+		if (this.settings.progressHistory.length > 100) {
+			this.settings.progressHistory = this.settings.progressHistory.slice(-100);
+		}
 	}
 	
 	async saveSettings() {
@@ -203,6 +244,7 @@ class CompleteSalahModal extends Modal {
 					const calculatedOld = this.plugin.calculateOldSalahs();
 					if (calculatedOld[salah] >= count) {
 						this.plugin.settings.oldSalahs[salah] += count;
+						this.plugin.trackProgress('completed', salah, count, 'old');
 						await this.plugin.saveSettings();
 						new Notice(`Completed ${count} old ${salah} salah(s)`);
 						this.close();
@@ -212,6 +254,7 @@ class CompleteSalahModal extends Modal {
 				} else {
 					if (this.plugin.settings.activeSalahs[salah] >= count) {
 						this.plugin.settings.activeSalahs[salah] -= count;
+						this.plugin.trackProgress('completed', salah, count, 'active');
 						await this.plugin.saveSettings();
 						new Notice(`Completed ${count} active ${salah} salah(s)`);
 						this.close();
@@ -285,6 +328,466 @@ class ManageSalahModal extends Modal {
 			
 			await this.plugin.saveSettings();
 			new Notice(`${action.charAt(0).toUpperCase() + action.slice(1)} ${count} active ${salah} salah(s)`);
+			this.close();
+		};
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class ProgressHistoryModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.style.cssText = 'padding: 20px; max-width: 600px;';
+		
+		const title = contentEl.createEl('h2', { text: 'Progress History' });
+		title.style.cssText = 'text-align: center; margin-bottom: 20px; color: var(--text-accent);';
+		
+		const history = this.plugin.settings.progressHistory.slice(-20).reverse(); // Last 20 entries
+		
+		if (history.length === 0) {
+			contentEl.createEl('p', { text: 'No progress history yet. Complete some salahs to see your progress!' });
+			return;
+		}
+		
+		const historyContainer = contentEl.createEl('div');
+		historyContainer.style.cssText = 'display: grid; gap: 10px; max-height: 400px; overflow-y: auto;';
+		
+		history.forEach(entry => {
+			const card = historyContainer.createEl('div');
+			card.style.cssText = `
+				background: var(--background-secondary);
+				border-radius: 6px;
+				padding: 12px;
+				border-left: 3px solid ${entry.action === 'completed' ? '#22c55e' : '#3b82f6'};
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			`;
+			
+			const actionEl = card.createEl('div');
+			actionEl.style.cssText = 'font-weight: 500; color: var(--text-normal);';
+			actionEl.textContent = `${entry.action.charAt(0).toUpperCase() + entry.action.slice(1)} ${entry.count} ${entry.salah} (${entry.type})`;
+			
+			const dateEl = card.createEl('div');
+			dateEl.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+			dateEl.textContent = new Date(entry.date).toLocaleString();
+		});
+		
+		// Statistics
+		const statsTitle = contentEl.createEl('h3', { text: 'Statistics' });
+		statsTitle.style.cssText = 'margin-top: 20px; margin-bottom: 10px; color: var(--text-normal);';
+		
+		const completedToday = history.filter(entry => {
+			const entryDate = new Date(entry.date);
+			const today = new Date();
+			return entryDate.toDateString() === today.toDateString() && entry.action === 'completed';
+		}).reduce((sum, entry) => sum + entry.count, 0);
+		
+		const totalCompleted = history.filter(entry => entry.action === 'completed')
+			.reduce((sum, entry) => sum + entry.count, 0);
+		
+		const statsContainer = contentEl.createEl('div');
+		statsContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 10px;';
+		
+		const todayCard = statsContainer.createEl('div');
+		todayCard.style.cssText = `
+			background: var(--background-secondary);
+			border-radius: 6px;
+			padding: 15px;
+			text-align: center;
+			border-left: 3px solid #22c55e;
+		`;
+		todayCard.createEl('div', { text: completedToday.toString() }).style.cssText = 'font-size: 24px; font-weight: bold; color: var(--text-accent);';
+		todayCard.createEl('div', { text: 'Completed Today' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		const totalCard = statsContainer.createEl('div');
+		totalCard.style.cssText = `
+			background: var(--background-secondary);
+			border-radius: 6px;
+			padding: 15px;
+			text-align: center;
+			border-left: 3px solid #3b82f6;
+		`;
+		totalCard.createEl('div', { text: totalCompleted.toString() }).style.cssText = 'font-size: 24px; font-weight: bold; color: var(--text-accent);';
+		totalCard.createEl('div', { text: 'Total Completed' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class PrayerTimesModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	calculatePrayerTimes() {
+		const now = new Date();
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		
+		// Basic prayer times (simplified calculation)
+		return {
+			fajr: new Date(today.getTime() + 5 * 60 * 60 * 1000), // 5:00 AM
+			dhuhr: new Date(today.getTime() + 12 * 60 * 60 * 1000), // 12:00 PM
+			asr: new Date(today.getTime() + 15.5 * 60 * 60 * 1000), // 3:30 PM
+			maghrib: new Date(today.getTime() + 18 * 60 * 60 * 1000), // 6:00 PM
+			isha: new Date(today.getTime() + 19.5 * 60 * 60 * 1000) // 7:30 PM
+		};
+	}
+	
+	getTimeStatus(prayerTime) {
+		const now = new Date();
+		const diff = prayerTime.getTime() - now.getTime();
+		
+		if (diff < 0) {
+			return { status: 'passed', color: '#ef4444' };
+		} else if (diff < 30 * 60 * 1000) { // 30 minutes
+			return { status: 'soon', color: '#f59e0b' };
+		} else {
+			return { status: 'upcoming', color: '#22c55e' };
+		}
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.style.cssText = 'padding: 20px; max-width: 500px;';
+		
+		const title = contentEl.createEl('h2', { text: 'Prayer Times' });
+		title.style.cssText = 'text-align: center; margin-bottom: 20px; color: var(--text-accent);';
+		
+		const currentTime = contentEl.createEl('div');
+		currentTime.style.cssText = 'text-align: center; margin-bottom: 20px; font-size: 18px; color: var(--text-normal);';
+		currentTime.textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
+		
+		const prayerTimes = this.calculatePrayerTimes();
+		const timesContainer = contentEl.createEl('div');
+		timesContainer.style.cssText = 'display: grid; gap: 15px;';
+		
+		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
+			const prayerTime = prayerTimes[salah];
+			const timeStatus = this.getTimeStatus(prayerTime);
+			
+			const card = timesContainer.createEl('div');
+			card.style.cssText = `
+				background: var(--background-secondary);
+				border-radius: 8px;
+				padding: 15px;
+				border-left: 4px solid ${timeStatus.color};
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			`;
+			
+			const nameEl = card.createEl('div');
+			nameEl.style.cssText = 'font-weight: 600; font-size: 16px; color: var(--text-normal);';
+			nameEl.textContent = salah.charAt(0).toUpperCase() + salah.slice(1);
+			
+			const timeEl = card.createEl('div');
+			timeEl.style.cssText = 'font-size: 14px; color: var(--text-muted);';
+			timeEl.textContent = prayerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+			
+			const statusEl = card.createEl('div');
+			statusEl.style.cssText = `font-size: 12px; color: ${timeStatus.color}; font-weight: 500;`;
+			statusEl.textContent = timeStatus.status.toUpperCase();
+		});
+		
+		const note = contentEl.createEl('p');
+		note.style.cssText = 'text-align: center; margin-top: 20px; font-size: 12px; color: var(--text-muted);';
+		note.textContent = 'Note: These are approximate times. Please verify with local mosque or Islamic calendar.';
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class BulkCompleteModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Bulk Complete Salahs' });
+		
+		const form = contentEl.createEl('form');
+		
+		const typeSelect = form.createEl('select');
+		const oldOption = typeSelect.createEl('option');
+		oldOption.value = 'old';
+		oldOption.text = 'Old Salahs';
+		const activeOption = typeSelect.createEl('option');
+		activeOption.value = 'active';
+		activeOption.text = 'Active Salahs';
+		
+		const checkboxContainer = form.createEl('div');
+		checkboxContainer.style.cssText = 'margin: 15px 0; display: grid; gap: 10px;';
+		
+		const salahCheckboxes = {};
+		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
+			const label = checkboxContainer.createEl('label');
+			label.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+			
+			const checkbox = label.createEl('input');
+			checkbox.type = 'checkbox';
+			salahCheckboxes[salah] = checkbox;
+			
+			label.createEl('span', { text: salah.charAt(0).toUpperCase() + salah.slice(1) });
+			
+			const countInput = label.createEl('input');
+			countInput.type = 'number';
+			countInput.placeholder = 'Count';
+			countInput.min = '1';
+			countInput.style.cssText = 'width: 80px; margin-left: auto;';
+			salahCheckboxes[salah].countInput = countInput;
+		});
+		
+		const selectAllBtn = form.createEl('button');
+		selectAllBtn.textContent = 'Select All';
+		selectAllBtn.type = 'button';
+		selectAllBtn.style.cssText = 'margin: 10px 0; padding: 5px 10px;';
+		selectAllBtn.onclick = () => {
+			Object.values(salahCheckboxes).forEach(cb => cb.checked = true);
+		};
+		
+		const submitBtn = form.createEl('button');
+		submitBtn.textContent = 'Complete Selected';
+		submitBtn.type = 'submit';
+		submitBtn.style.cssText = 'background: #22c55e; color: white; padding: 10px 20px; border: none; border-radius: 4px;';
+		
+		form.onsubmit = async (e) => {
+			e.preventDefault();
+			const type = typeSelect.value;
+			let totalCompleted = 0;
+			const results = [];
+			
+			const calculatedOld = this.plugin.calculateOldSalahs();
+			
+			for (const [salah, checkbox] of Object.entries(salahCheckboxes)) {
+				if (checkbox.checked) {
+					const count = parseInt(checkbox.countInput.value) || 1;
+					
+					if (type === 'old') {
+						const totalOld = calculatedOld[salah];
+						const alreadyCompleted = this.plugin.settings.oldSalahs[salah];
+						const remaining = Math.max(0, totalOld - alreadyCompleted);
+						const toComplete = Math.min(count, remaining);
+						
+						if (toComplete > 0) {
+							this.plugin.settings.oldSalahs[salah] += toComplete;
+							this.plugin.trackProgress('completed', salah, toComplete, 'old');
+							totalCompleted += toComplete;
+							results.push(`${toComplete} ${salah}`);
+						} else if (count > remaining) {
+							results.push(`${salah}: only ${remaining} available`);
+						}
+					} else {
+						const available = this.plugin.settings.activeSalahs[salah];
+						const toComplete = Math.min(count, available);
+						
+						if (toComplete > 0) {
+							this.plugin.settings.activeSalahs[salah] -= toComplete;
+							this.plugin.trackProgress('completed', salah, toComplete, 'active');
+							totalCompleted += toComplete;
+							results.push(`${toComplete} ${salah}`);
+						} else if (count > available) {
+							results.push(`${salah}: only ${available} available`);
+						}
+					}
+				}
+			}
+			
+			await this.plugin.saveSettings();
+			if (totalCompleted > 0) {
+				new Notice(`Completed: ${results.join(', ')}`);
+			} else {
+				new Notice('No salahs were completed');
+			}
+			this.close();
+		};
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class ResetModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Delete/Reset Salahs' });
+		
+		const form = contentEl.createEl('form');
+		
+		const actionSelect = form.createEl('select');
+		['reset-all-old', 'reset-all-active', 'reduce-old', 'reduce-active', 'reset-specific-old', 'reset-specific-active', 'clear-all'].forEach(action => {
+			const option = actionSelect.createEl('option');
+			option.value = action;
+			option.text = {
+				'reset-all-old': 'Reset All Old Salahs',
+				'reset-all-active': 'Reset All Active Salahs',
+				'reduce-old': 'Bulk Reduce Old Salahs',
+				'reduce-active': 'Bulk Reduce Active Salahs',
+				'reset-specific-old': 'Reset Specific Old Salah',
+				'reset-specific-active': 'Reset Specific Active Salah',
+				'clear-all': 'Clear All Data'
+			}[action];
+		});
+		
+		const salahSelect = form.createEl('select');
+		salahSelect.style.display = 'none';
+		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
+			const option = salahSelect.createEl('option');
+			option.value = salah;
+			option.text = salah.charAt(0).toUpperCase() + salah.slice(1);
+		});
+		
+		const bulkContainer = form.createEl('div');
+		bulkContainer.style.cssText = 'margin: 15px 0; display: none;';
+		
+		const salahCheckboxes = {};
+		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
+			const label = bulkContainer.createEl('label');
+			label.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
+			
+			const checkbox = label.createEl('input');
+			checkbox.type = 'checkbox';
+			salahCheckboxes[salah] = checkbox;
+			
+			label.createEl('span', { text: salah.charAt(0).toUpperCase() + salah.slice(1) });
+			
+			const countInput = label.createEl('input');
+			countInput.type = 'number';
+			countInput.placeholder = 'Count';
+			countInput.min = '1';
+			countInput.style.cssText = 'width: 80px; margin-left: auto;';
+			salahCheckboxes[salah].countInput = countInput;
+		});
+		
+		const selectAllBtn = bulkContainer.createEl('button');
+		selectAllBtn.textContent = 'Select All';
+		selectAllBtn.type = 'button';
+		selectAllBtn.style.cssText = 'margin: 10px 0; padding: 5px 10px;';
+		selectAllBtn.onclick = () => {
+			Object.values(salahCheckboxes).forEach(cb => cb.checked = true);
+		};
+		
+		actionSelect.onchange = () => {
+			const action = actionSelect.value;
+			if (action.includes('specific')) {
+				salahSelect.style.display = 'block';
+				bulkContainer.style.display = 'none';
+			} else if (action.includes('reduce')) {
+				salahSelect.style.display = 'none';
+				bulkContainer.style.display = 'block';
+			} else {
+				salahSelect.style.display = 'none';
+				bulkContainer.style.display = 'none';
+			}
+		};
+		
+		const warningEl = form.createEl('p');
+		warningEl.style.cssText = 'color: #ef4444; font-weight: bold; margin: 10px 0;';
+		warningEl.textContent = '⚠️ This action cannot be undone!';
+		
+		const submitBtn = form.createEl('button');
+		submitBtn.textContent = 'Reset';
+		submitBtn.type = 'submit';
+		submitBtn.style.cssText = 'background: #ef4444; color: white; padding: 10px 20px; border: none; border-radius: 4px;';
+		
+		form.onsubmit = async (e) => {
+			e.preventDefault();
+			const action = actionSelect.value;
+			const salah = salahSelect.value;
+			
+			if (action === 'reset-all-old') {
+				['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(s => {
+					this.plugin.settings.oldSalahs[s] = 0;
+				});
+				new Notice('All old salahs reset to 0');
+			} else if (action === 'reset-all-active') {
+				['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(s => {
+					this.plugin.settings.activeSalahs[s] = 0;
+				});
+				new Notice('All active salahs reset to 0');
+			} else if (action === 'reduce-old') {
+				const results = [];
+				for (const [salah, checkbox] of Object.entries(salahCheckboxes)) {
+					if (checkbox.checked) {
+						const count = parseInt(checkbox.countInput.value) || 0;
+						if (count > 0) {
+							const current = this.plugin.settings.oldSalahs[salah];
+							const newValue = Math.max(0, current - count);
+							this.plugin.settings.oldSalahs[salah] = newValue;
+							this.plugin.trackProgress('reduced', salah, count, 'old');
+							results.push(`${salah}: ${current} → ${newValue}`);
+						}
+					}
+				}
+				if (results.length > 0) {
+					new Notice(`Reduced old salahs: ${results.join(', ')}`);
+				} else {
+					new Notice('No salahs selected or valid counts entered');
+					return;
+				}
+			} else if (action === 'reduce-active') {
+				const results = [];
+				for (const [salah, checkbox] of Object.entries(salahCheckboxes)) {
+					if (checkbox.checked) {
+						const count = parseInt(checkbox.countInput.value) || 0;
+						if (count > 0) {
+							const current = this.plugin.settings.activeSalahs[salah];
+							const newValue = Math.max(0, current - count);
+							this.plugin.settings.activeSalahs[salah] = newValue;
+							this.plugin.trackProgress('reduced', salah, count, 'active');
+							results.push(`${salah}: ${current} → ${newValue}`);
+						}
+					}
+				}
+				if (results.length > 0) {
+					new Notice(`Reduced active salahs: ${results.join(', ')}`);
+				} else {
+					new Notice('No salahs selected or valid counts entered');
+					return;
+				}
+			} else if (action === 'reset-specific-old') {
+				const current = this.plugin.settings.oldSalahs[salah];
+				this.plugin.settings.oldSalahs[salah] = 0;
+				new Notice(`Reset ${salah} old salahs (${current} → 0)`);
+			} else if (action === 'reset-specific-active') {
+				const current = this.plugin.settings.activeSalahs[salah];
+				this.plugin.settings.activeSalahs[salah] = 0;
+				new Notice(`Reset ${salah} active salahs (${current} → 0)`);
+			} else if (action === 'clear-all') {
+				this.plugin.settings.oldSalahPeriod = { days: 0, months: 0, years: 0 };
+				['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(s => {
+					this.plugin.settings.oldSalahs[s] = 0;
+					this.plugin.settings.activeSalahs[s] = 0;
+				});
+				new Notice('All data cleared');
+			}
+			
+			await this.plugin.saveSettings();
 			this.close();
 		};
 	}

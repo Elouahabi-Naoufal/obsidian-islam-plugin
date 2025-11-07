@@ -5,8 +5,8 @@
     "years": 7
   },
   "oldSalahs": {
-    "fajr": 0,
-    "dhuhr": 0,
+    "fajr": 279,
+    "dhuhr": 190,
     "asr": 0,
     "maghrib": 0,
     "isha": 0
@@ -17,5 +17,35 @@
     "asr": 0,
     "maghrib": 0,
     "isha": 0
-  }
+  },
+  "progressHistory": [
+    {
+      "date": "2025-11-06T21:56:37.013Z",
+      "action": "completed",
+      "salah": "fajr",
+      "count": 299,
+      "type": "old"
+    },
+    {
+      "date": "2025-11-06T21:56:37.013Z",
+      "action": "completed",
+      "salah": "dhuhr",
+      "count": 200,
+      "type": "old"
+    },
+    {
+      "date": "2025-11-07T19:20:52.062Z",
+      "action": "reduced",
+      "salah": "fajr",
+      "count": 20,
+      "type": "old"
+    },
+    {
+      "date": "2025-11-07T19:20:52.062Z",
+      "action": "reduced",
+      "salah": "dhuhr",
+      "count": 10,
+      "type": "old"
+    }
+  ]
 }
