@@ -12,11 +12,11 @@
     "isha": 0
   },
   "activeSalahs": {
-    "fajr": 0,
-    "dhuhr": 0,
-    "asr": 0,
-    "maghrib": 0,
-    "isha": 0
+    "fajr": 7,
+    "dhuhr": 7,
+    "asr": 7,
+    "maghrib": 7,
+    "isha": 7
   },
   "progressHistory": [
     {

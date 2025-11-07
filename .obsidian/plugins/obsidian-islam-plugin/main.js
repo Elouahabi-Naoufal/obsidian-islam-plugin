@@ -29,22 +29,18 @@ class IslamPlugin extends Plugin {
 		
 		this.addSettingTab(new IslamSettingTab(this.app, this));
 		
+		// === SALAH COMPLETION ===
 		this.addCommand({
-			id: 'complete-salah',
-			name: 'Complete Salah',
-			callback: () => new CompleteSalahModal(this).open()
+			id: 'bulk-complete',
+			name: 'Complete Salahs',
+			callback: () => new BulkCompleteModal(this).open()
 		});
 		
+		// === SALAH MANAGEMENT ===
 		this.addCommand({
 			id: 'manage-salahs',
-			name: 'Manage Salahs (CRUD)',
+			name: 'Add/Edit Active Salahs',
 			callback: () => new ManageSalahModal(this).open()
-		});
-		
-		this.addCommand({
-			id: 'show-dashboard',
-			name: 'Show Salah Dashboard',
-			callback: () => new DashboardModal(this).open()
 		});
 		
 		this.addCommand({
@@ -53,22 +49,24 @@ class IslamPlugin extends Plugin {
 			callback: () => new ResetModal(this).open()
 		});
 		
+		// === DASHBOARD & TRACKING ===
 		this.addCommand({
-			id: 'bulk-complete',
-			name: 'Bulk Complete Salahs',
-			callback: () => new BulkCompleteModal(this).open()
-		});
-		
-		this.addCommand({
-			id: 'prayer-times',
-			name: 'Show Prayer Times',
-			callback: () => new PrayerTimesModal(this).open()
+			id: 'show-dashboard',
+			name: 'View Salah Dashboard',
+			callback: () => new DashboardModal(this).open()
 		});
 		
 		this.addCommand({
 			id: 'progress-history',
-			name: 'Show Progress History',
+			name: 'View Progress History',
 			callback: () => new ProgressHistoryModal(this).open()
+		});
+		
+		// === PRAYER TIMES ===
+		this.addCommand({
+			id: 'prayer-times',
+			name: 'View Prayer Times',
+			callback: () => new PrayerTimesModal(this).open()
 		});
 	}
 	
@@ -197,81 +195,6 @@ class IslamSettingTab extends PluginSettingTab {
 	}
 }
 
-class CompleteSalahModal extends Modal {
-	constructor(plugin) {
-		super(plugin.app);
-		this.plugin = plugin;
-	}
-	
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.createEl('h2', { text: 'Complete Salah' });
-		
-		const form = contentEl.createEl('form');
-		
-		const typeSelect = form.createEl('select');
-		const oldOption = typeSelect.createEl('option');
-		oldOption.value = 'old';
-		oldOption.text = 'Old Salah';
-		const activeOption = typeSelect.createEl('option');
-		activeOption.value = 'active';
-		activeOption.text = 'Active Salah';
-		
-		const salahSelect = form.createEl('select');
-		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
-			const option = salahSelect.createEl('option');
-			option.value = salah;
-			option.text = salah.charAt(0).toUpperCase() + salah.slice(1);
-		});
-		
-		const countInput = form.createEl('input');
-		countInput.type = 'number';
-		countInput.placeholder = 'Count';
-		countInput.min = '1';
-		
-		const submitBtn = form.createEl('button');
-		submitBtn.textContent = 'Complete';
-		submitBtn.type = 'submit';
-		
-		form.onsubmit = async (e) => {
-			e.preventDefault();
-			const type = typeSelect.value;
-			const salah = salahSelect.value;
-			const count = parseInt(countInput.value) || 0;
-			
-			if (count > 0) {
-				if (type === 'old') {
-					const calculatedOld = this.plugin.calculateOldSalahs();
-					if (calculatedOld[salah] >= count) {
-						this.plugin.settings.oldSalahs[salah] += count;
-						this.plugin.trackProgress('completed', salah, count, 'old');
-						await this.plugin.saveSettings();
-						new Notice(`Completed ${count} old ${salah} salah(s)`);
-						this.close();
-					} else {
-						new Notice(`Only ${calculatedOld[salah]} old ${salah} salahs available`);
-					}
-				} else {
-					if (this.plugin.settings.activeSalahs[salah] >= count) {
-						this.plugin.settings.activeSalahs[salah] -= count;
-						this.plugin.trackProgress('completed', salah, count, 'active');
-						await this.plugin.saveSettings();
-						new Notice(`Completed ${count} active ${salah} salah(s)`);
-						this.close();
-					} else {
-						new Notice(`Only ${this.plugin.settings.activeSalahs[salah]} active ${salah} salahs available`);
-					}
-				}
-			}
-		};
-	}
-	
-	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
-	}
-}
-
 class ManageSalahModal extends Modal {
 	constructor(plugin) {
 		super(plugin.app);
@@ -280,7 +203,7 @@ class ManageSalahModal extends Modal {
 	
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl('h2', { text: 'Manage Salahs (CRUD)' });
+		contentEl.createEl('h2', { text: 'Edit Active Salahs' });
 		
 		const form = contentEl.createEl('form');
 		
@@ -288,46 +211,83 @@ class ManageSalahModal extends Modal {
 		['add', 'remove', 'set'].forEach(action => {
 			const option = actionSelect.createEl('option');
 			option.value = action;
-			option.text = action.charAt(0).toUpperCase() + action.slice(1);
+			option.text = {
+				'add': 'Add to Active Salahs',
+				'remove': 'Remove from Active Salahs',
+				'set': 'Set Active Salahs Count'
+			}[action];
 		});
 		
-		const typeSelect = form.createEl('select');
-		const activeOption = typeSelect.createEl('option');
-		activeOption.value = 'active';
-		activeOption.text = 'Active Salah';
+		const checkboxContainer = form.createEl('div');
+		checkboxContainer.style.cssText = 'margin: 15px 0; display: grid; gap: 10px;';
 		
-		const salahSelect = form.createEl('select');
+		const salahCheckboxes = {};
 		['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach(salah => {
-			const option = salahSelect.createEl('option');
-			option.value = salah;
-			option.text = salah.charAt(0).toUpperCase() + salah.slice(1);
+			const label = checkboxContainer.createEl('label');
+			label.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+			
+			const checkbox = label.createEl('input');
+			checkbox.type = 'checkbox';
+			salahCheckboxes[salah] = checkbox;
+			
+			const nameSpan = label.createEl('span', { text: salah.charAt(0).toUpperCase() + salah.slice(1) });
+			nameSpan.style.cssText = 'min-width: 80px;';
+			
+			const currentSpan = label.createEl('span');
+			currentSpan.style.cssText = 'color: var(--text-muted); font-size: 12px; min-width: 60px;';
+			currentSpan.textContent = `(${this.plugin.settings.activeSalahs[salah]})`;
+			
+			const countInput = label.createEl('input');
+			countInput.type = 'number';
+			countInput.placeholder = 'Count';
+			countInput.min = '0';
+			countInput.style.cssText = 'width: 80px; margin-left: auto;';
+			salahCheckboxes[salah].countInput = countInput;
 		});
 		
-		const countInput = form.createEl('input');
-		countInput.type = 'number';
-		countInput.placeholder = 'Count';
-		countInput.min = '0';
+		const selectAllBtn = form.createEl('button');
+		selectAllBtn.textContent = 'Select All';
+		selectAllBtn.type = 'button';
+		selectAllBtn.style.cssText = 'margin: 10px 0; padding: 5px 10px;';
+		selectAllBtn.onclick = () => {
+			Object.values(salahCheckboxes).forEach(cb => cb.checked = true);
+		};
 		
 		const submitBtn = form.createEl('button');
 		submitBtn.textContent = 'Execute';
 		submitBtn.type = 'submit';
+		submitBtn.style.cssText = 'background: #3b82f6; color: white; padding: 10px 20px; border: none; border-radius: 4px;';
 		
 		form.onsubmit = async (e) => {
 			e.preventDefault();
 			const action = actionSelect.value;
-			const salah = salahSelect.value;
-			const count = parseInt(countInput.value) || 0;
+			const results = [];
 			
-			if (action === 'add') {
-				this.plugin.settings.activeSalahs[salah] += count;
-			} else if (action === 'remove') {
-				this.plugin.settings.activeSalahs[salah] = Math.max(0, this.plugin.settings.activeSalahs[salah] - count);
-			} else if (action === 'set') {
-				this.plugin.settings.activeSalahs[salah] = count;
+			for (const [salah, checkbox] of Object.entries(salahCheckboxes)) {
+				if (checkbox.checked) {
+					const count = parseInt(checkbox.countInput.value) || 0;
+					const current = this.plugin.settings.activeSalahs[salah];
+					
+					if (action === 'add') {
+						this.plugin.settings.activeSalahs[salah] += count;
+						results.push(`${salah}: ${current} → ${current + count}`);
+					} else if (action === 'remove') {
+						const newValue = Math.max(0, current - count);
+						this.plugin.settings.activeSalahs[salah] = newValue;
+						results.push(`${salah}: ${current} → ${newValue}`);
+					} else if (action === 'set') {
+						this.plugin.settings.activeSalahs[salah] = count;
+						results.push(`${salah}: ${current} → ${count}`);
+					}
+				}
 			}
 			
 			await this.plugin.saveSettings();
-			new Notice(`${action.charAt(0).toUpperCase() + action.slice(1)} ${count} active ${salah} salah(s)`);
+			if (results.length > 0) {
+				new Notice(`${action.charAt(0).toUpperCase() + action.slice(1)}: ${results.join(', ')}`);
+			} else {
+				new Notice('No salahs selected');
+			}
 			this.close();
 		};
 	}
