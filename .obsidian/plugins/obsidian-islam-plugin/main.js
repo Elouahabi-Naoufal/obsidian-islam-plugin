@@ -119,12 +119,44 @@ class IslamSettingTab extends PluginSettingTab {
 		
 		containerEl.createEl('h2', { text: 'Islam Plugin Settings' });
 		
-		containerEl.createEl('h3', { text: 'Salah Settings' });
+		// Tab Navigation
+		const tabContainer = containerEl.createEl('div');
+		tabContainer.style.cssText = 'display: flex; border-bottom: 1px solid var(--background-modifier-border); margin-bottom: 20px;';
 		
-		// Old Salahs Period Input
-		containerEl.createEl('h4', { text: 'Old Salahs Time Period' });
+		const salahTab = tabContainer.createEl('button', { text: 'Salah' });
+		salahTab.style.cssText = 'padding: 10px 20px; border: none; background: var(--interactive-accent); color: var(--text-on-accent); cursor: pointer; border-radius: 4px 4px 0 0;';
 		
-		new Setting(containerEl)
+		const quranTab = tabContainer.createEl('button', { text: 'Quran' });
+		quranTab.style.cssText = 'padding: 10px 20px; border: none; background: var(--background-secondary); color: var(--text-muted); cursor: pointer; border-radius: 4px 4px 0 0; margin-left: 2px;';
+		
+		// Tab Content
+		const salahContent = containerEl.createEl('div');
+		const quranContent = containerEl.createEl('div');
+		quranContent.style.display = 'none';
+		
+		// Tab Switching
+		salahTab.onclick = () => {
+			salahTab.style.background = 'var(--interactive-accent)';
+			salahTab.style.color = 'var(--text-on-accent)';
+			quranTab.style.background = 'var(--background-secondary)';
+			quranTab.style.color = 'var(--text-muted)';
+			salahContent.style.display = 'block';
+			quranContent.style.display = 'none';
+		};
+		
+		quranTab.onclick = () => {
+			quranTab.style.background = 'var(--interactive-accent)';
+			quranTab.style.color = 'var(--text-on-accent)';
+			salahTab.style.background = 'var(--background-secondary)';
+			salahTab.style.color = 'var(--text-muted)';
+			quranContent.style.display = 'block';
+			salahContent.style.display = 'none';
+		};
+		
+		// SALAH TAB CONTENT
+		salahContent.createEl('h4', { text: 'Old Salahs Time Period' });
+		
+		new Setting(salahContent)
 			.setName('Days')
 			.addText(text => {
 				text.setPlaceholder('0')
@@ -137,7 +169,7 @@ class IslamSettingTab extends PluginSettingTab {
 				text.inputEl.type = 'number';
 			});
 		
-		new Setting(containerEl)
+		new Setting(salahContent)
 			.setName('Months')
 			.addText(text => {
 				text.setPlaceholder('0')
@@ -150,7 +182,7 @@ class IslamSettingTab extends PluginSettingTab {
 				text.inputEl.type = 'number';
 			});
 		
-		new Setting(containerEl)
+		new Setting(salahContent)
 			.setName('Years')
 			.addText(text => {
 				text.setPlaceholder('0')
@@ -164,20 +196,20 @@ class IslamSettingTab extends PluginSettingTab {
 			});
 		
 		// Calculated Old Salahs (Read-only)
-		containerEl.createEl('h4', { text: 'Calculated Old Salahs (Read-only)' });
+		salahContent.createEl('h4', { text: 'Calculated Old Salahs (Read-only)' });
 		const calculatedOld = this.plugin.calculateOldSalahs();
 		const salahTypes = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 		
 		salahTypes.forEach(salah => {
-			new Setting(containerEl)
+			new Setting(salahContent)
 				.setName(salah.charAt(0).toUpperCase() + salah.slice(1))
 				.setDesc(`${calculatedOld[salah]} prayers`);
 		});
 		
 		// Active Salahs
-		containerEl.createEl('h4', { text: 'Active Salahs' });
+		salahContent.createEl('h4', { text: 'Active Salahs' });
 		salahTypes.forEach(salah => {
-			new Setting(containerEl)
+			new Setting(salahContent)
 				.setName(salah.charAt(0).toUpperCase() + salah.slice(1))
 				.addText(text => {
 					text.setPlaceholder('0')
@@ -190,8 +222,10 @@ class IslamSettingTab extends PluginSettingTab {
 				});
 		});
 		
-		containerEl.createEl('h3', { text: 'Quran Settings' });
-		containerEl.createEl('p', { text: 'Quran features will be available in future updates.' });
+		// QURAN TAB CONTENT
+		quranContent.createEl('h4', { text: 'Quran Reading Tracker' });
+		quranContent.createEl('p', { text: 'Quran features will be available in future updates.' });
+		quranContent.createEl('p', { text: 'Planned features: Daily reading goals, Surah progress, Completion tracking' }).style.color = 'var(--text-muted)';
 	}
 }
 
