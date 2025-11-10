@@ -20,6 +20,11 @@ const DEFAULT_SETTINGS = {
 		maghrib: 0,
 		isha: 0
 	},
+	quranProgress: {
+		readingSessions: [], // Current reading sessions
+		completions: [], // Array of {id, startDate, endDate, sessions: []}
+		currentCompletionId: null
+	},
 	progressHistory: []
 };
 
@@ -68,6 +73,33 @@ class IslamPlugin extends Plugin {
 			name: 'View Prayer Times',
 			callback: () => new PrayerTimesModal(this).open()
 		});
+		
+		// === QURAN TRACKING ===
+		this.addCommand({
+			id: 'add-quran-reading',
+			name: 'Add Quran Reading',
+			callback: () => new QuranReadingModal(this).open()
+		});
+		
+		this.addCommand({
+			id: 'quran-dashboard',
+			name: 'View Quran Dashboard',
+			callback: () => new QuranDashboardModal(this).open()
+		});
+		
+
+		
+		this.addCommand({
+			id: 'edit-quran-readings',
+			name: 'Edit Quran Readings',
+			callback: () => new EditQuranModal(this).open()
+		});
+		
+		this.addCommand({
+			id: 'quran-completions',
+			name: 'View Quran Completions',
+			callback: () => new QuranCompletionsModal(this).open()
+		});
 	}
 	
 	calculateOldSalahs() {
@@ -80,6 +112,60 @@ class IslamPlugin extends Plugin {
 			maghrib: totalDays,
 			isha: totalDays
 		};
+	}
+	
+	calculateQuranProgress() {
+		const sessions = this.settings.quranProgress.readingSessions || [];
+		const totalTumun = sessions.reduce((sum, session) => sum + session.totalTumun, 0);
+		const fullQuranTumun = 480; // 30 Juz * 2 Hizb * 4 Rubu * 2 Tumun
+		
+		return {
+			tumun: totalTumun,
+			rubu: Math.floor(totalTumun / 2),
+			hizb: Math.floor(totalTumun / 8),
+			juz: Math.floor(totalTumun / 16),
+			percentage: Math.round((totalTumun / fullQuranTumun) * 100),
+			fullQuranTumun,
+			sessions: sessions.length
+		};
+	}
+	
+	convertToTumun(juz, hizb, rubu, tumun) {
+		// Convert reading input to total tumun
+		return (juz * 16) + (hizb * 8) + (rubu * 2) + tumun;
+	}
+	
+	checkAndHandleCompletion() {
+		const sessions = this.settings.quranProgress.readingSessions || [];
+		const totalTumun = sessions.reduce((sum, session) => sum + session.totalTumun, 0);
+		
+		if (totalTumun >= 480) {
+			this.completeQuran();
+			return true;
+		}
+		return false;
+	}
+	
+	async completeQuran() {
+		const sessions = this.settings.quranProgress.readingSessions || [];
+		const completionId = Date.now();
+		
+		const completion = {
+			id: completionId,
+			startDate: sessions[0]?.date || new Date().toISOString(),
+			endDate: new Date().toISOString(),
+			sessions: [...sessions]
+		};
+		
+		if (!this.settings.quranProgress.completions) {
+			this.settings.quranProgress.completions = [];
+		}
+		this.settings.quranProgress.completions.push(completion);
+		this.settings.quranProgress.readingSessions = [];
+		this.settings.quranProgress.currentCompletionId = null;
+		
+		await this.saveSettings();
+		new Notice('🎉 Alhamdulillah! Quran completed! Starting new Khatm.');
 	}
 	
 	async loadSettings() {
@@ -223,9 +309,30 @@ class IslamSettingTab extends PluginSettingTab {
 		});
 		
 		// QURAN TAB CONTENT
-		quranContent.createEl('h4', { text: 'Quran Reading Tracker' });
-		quranContent.createEl('p', { text: 'Quran features will be available in future updates.' });
-		quranContent.createEl('p', { text: 'Planned features: Daily reading goals, Surah progress, Completion tracking' }).style.color = 'var(--text-muted)';
+		quranContent.createEl('h4', { text: 'Quran Reading Progress' });
+		
+		const quranProgress = this.plugin.calculateQuranProgress();
+		
+		new Setting(quranContent)
+			.setName('Total Progress')
+			.setDesc(`${quranProgress.percentage}% complete (${quranProgress.tumun}/${quranProgress.fullQuranTumun} tumun)`);
+		
+		new Setting(quranContent)
+			.setName('Juz Completed')
+			.setDesc(`${quranProgress.juz} out of 30 Juz`);
+		
+		new Setting(quranContent)
+			.setName('Hizb Completed')
+			.setDesc(`${quranProgress.hizb} Hizb total`);
+		
+		new Setting(quranContent)
+			.setName('Rubu Completed')
+			.setDesc(`${quranProgress.rubu} Rubu (1/4) total`);
+		
+		quranContent.createEl('h4', { text: 'Reading Units' });
+		quranContent.createEl('p', { text: '• 1 Juz = 2 Hizb = 8 Rubu = 16 Tumun' }).style.color = 'var(--text-muted)';
+		quranContent.createEl('p', { text: '• 1 Hizb = 4 Rubu = 8 Tumun' }).style.color = 'var(--text-muted)';
+		quranContent.createEl('p', { text: '• 1 Rubu = 2 Tumun' }).style.color = 'var(--text-muted)';
 	}
 }
 
@@ -783,6 +890,576 @@ class ResetModal extends Modal {
 			
 			await this.plugin.saveSettings();
 			this.close();
+		};
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class QuranReadingModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Add Quran Reading' });
+		
+		const form = contentEl.createEl('form');
+		
+		const juzInput = form.createEl('input');
+		juzInput.type = 'number';
+		juzInput.placeholder = 'Juz (0-30)';
+		juzInput.min = '0';
+		juzInput.max = '30';
+		
+		const hizbInput = form.createEl('input');
+		hizbInput.type = 'number';
+		hizbInput.placeholder = 'Hizb (0-1)';
+		hizbInput.min = '0';
+		hizbInput.max = '1';
+		
+		const rubuInput = form.createEl('input');
+		rubuInput.type = 'number';
+		rubuInput.placeholder = 'Rubu (0-3)';
+		rubuInput.min = '0';
+		rubuInput.max = '3';
+		
+		const tumunInput = form.createEl('input');
+		tumunInput.type = 'number';
+		tumunInput.placeholder = 'Tumun (0-1)';
+		tumunInput.min = '0';
+		tumunInput.max = '1';
+		
+		const noteInput = form.createEl('textarea');
+		noteInput.placeholder = 'Optional note (e.g., "Morning reading after Fajr")';
+		noteInput.style.cssText = 'width: 100%; height: 60px; resize: vertical; margin: 10px 0;';
+		
+		form.createEl('p', { text: 'Enter the amount you read (e.g., 1 Juz 2 Hizb 1 Rubu 0 Tumun)' }).style.cssText = 'font-size: 12px; color: var(--text-muted); margin: 10px 0;';
+		
+		const submitBtn = form.createEl('button');
+		submitBtn.textContent = 'Add Reading';
+		submitBtn.type = 'submit';
+		submitBtn.style.cssText = 'background: #22c55e; color: white; padding: 10px 20px; border: none; border-radius: 4px;';
+		
+		form.onsubmit = async (e) => {
+			e.preventDefault();
+			const juz = parseInt(juzInput.value) || 0;
+			const hizb = parseInt(hizbInput.value) || 0;
+			const rubu = parseInt(rubuInput.value) || 0;
+			const tumun = parseInt(tumunInput.value) || 0;
+			const note = noteInput.value.trim();
+			
+			const totalTumun = this.plugin.convertToTumun(juz, hizb, rubu, tumun);
+			
+			if (totalTumun > 0) {
+				// Check if this would exceed completion
+				const sessions = this.plugin.settings.quranProgress.readingSessions || [];
+				const currentTotal = sessions.reduce((sum, s) => sum + s.totalTumun, 0);
+				if (currentTotal + totalTumun > 480) {
+					const remaining = 480 - currentTotal;
+					new Notice(`Only ${remaining} tumun remaining to complete current Khatm`);
+					return;
+				}
+				
+				const session = {
+					id: Date.now(),
+					date: new Date().toISOString(),
+					juz,
+					hizb,
+					rubu,
+					tumun,
+					note,
+					totalTumun
+				};
+				
+				if (!this.plugin.settings.quranProgress.readingSessions) {
+					this.plugin.settings.quranProgress.readingSessions = [];
+				}
+				this.plugin.settings.quranProgress.readingSessions.push(session);
+				this.plugin.trackProgress('read', 'quran', totalTumun, 'tumun');
+				
+				// Check for completion
+				const completed = this.plugin.checkAndHandleCompletion();
+				if (!completed) {
+					await this.plugin.saveSettings();
+					new Notice(`Added ${totalTumun} tumun of Quran reading`);
+				}
+				this.close();
+			} else {
+				new Notice('Please enter a valid reading amount');
+			}
+		};
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class QuranDashboardModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.style.cssText = 'padding: 20px; max-width: 600px;';
+		
+		const title = contentEl.createEl('h2', { text: 'Quran Reading Dashboard' });
+		title.style.cssText = 'text-align: center; margin-bottom: 20px; color: var(--text-accent);';
+		
+		const progress = this.plugin.calculateQuranProgress();
+		
+		// Progress Circle
+		const circleContainer = contentEl.createEl('div');
+		circleContainer.style.cssText = 'text-align: center; margin-bottom: 30px;';
+		
+		const circle = circleContainer.createEl('div');
+		circle.style.cssText = `
+			position: relative;
+			display: inline-block;
+			width: 150px;
+			height: 150px;
+			border-radius: 50%;
+			background: conic-gradient(
+				${progress.percentage >= 80 ? '#22c55e' : progress.percentage >= 50 ? '#f59e0b' : '#3b82f6'} ${progress.percentage * 3.6}deg,
+				#333 ${progress.percentage * 3.6}deg
+			);
+			padding: 15px;
+		`;
+		
+		const innerCircle = circle.createEl('div');
+		innerCircle.style.cssText = `
+			width: 120px;
+			height: 120px;
+			border-radius: 50%;
+			background: var(--background-secondary);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			flex-direction: column;
+		`;
+		
+		innerCircle.createEl('div', { text: `${progress.percentage}%` }).style.cssText = 'font-size: 24px; font-weight: bold; color: var(--text-accent);';
+		innerCircle.createEl('div', { text: 'Complete' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		// Progress Stats
+		const statsContainer = contentEl.createEl('div');
+		statsContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;';
+		
+		const juzCard = statsContainer.createEl('div');
+		juzCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		juzCard.createEl('div', { text: progress.juz.toString() }).style.cssText = 'font-size: 28px; font-weight: bold; color: var(--text-accent);';
+		juzCard.createEl('div', { text: 'Juz Completed' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		const hizbCard = statsContainer.createEl('div');
+		hizbCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		hizbCard.createEl('div', { text: progress.hizb.toString() }).style.cssText = 'font-size: 28px; font-weight: bold; color: var(--text-accent);';
+		hizbCard.createEl('div', { text: 'Total Hizb' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		const rubuCard = statsContainer.createEl('div');
+		rubuCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		rubuCard.createEl('div', { text: progress.rubu.toString() }).style.cssText = 'font-size: 28px; font-weight: bold; color: var(--text-accent);';
+		rubuCard.createEl('div', { text: 'Total Rubu' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		const tumunCard = statsContainer.createEl('div');
+		tumunCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		tumunCard.createEl('div', { text: progress.tumun.toString() }).style.cssText = 'font-size: 28px; font-weight: bold; color: var(--text-accent);';
+		tumunCard.createEl('div', { text: 'Total Tumun' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		// Remaining
+		const remaining = progress.fullQuranTumun - progress.tumun;
+		const remainingJuz = Math.floor(remaining / 16);
+		const remainingHizb = Math.floor((remaining % 16) / 8);
+		
+		contentEl.createEl('h3', { text: 'Remaining' });
+		if (remainingJuz > 0 || remainingHizb > 0) {
+			contentEl.createEl('p', { text: `${remainingJuz} Juz and ${remainingHizb} Hizb remaining to complete the Quran` });
+		} else {
+			contentEl.createEl('p', { text: 'Alhamdulillah! Quran completed!' }).style.color = '#22c55e';
+		}
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class EditQuranModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.style.cssText = 'padding: 20px; max-width: 600px;';
+		
+		const title = contentEl.createEl('h2', { text: 'Edit Quran Readings' });
+		title.style.cssText = 'text-align: center; margin-bottom: 20px; color: var(--text-accent);';
+		
+		const sessions = this.plugin.settings.quranProgress.readingSessions || [];
+		
+		if (sessions.length === 0) {
+			contentEl.createEl('p', { text: 'No reading sessions to edit.' });
+			return;
+		}
+		
+		const sessionsContainer = contentEl.createEl('div');
+		sessionsContainer.style.cssText = 'display: grid; gap: 10px; max-height: 400px; overflow-y: auto;';
+		
+		sessions.slice().reverse().forEach((session, index) => {
+			const card = sessionsContainer.createEl('div');
+			card.style.cssText = `
+				background: var(--background-secondary);
+				border-radius: 8px;
+				padding: 15px;
+				border-left: 4px solid #3b82f6;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			`;
+			
+			const info = card.createEl('div');
+			info.createEl('div', { text: `${session.juz}J ${session.hizb}H ${session.rubu}R ${session.tumun}T` }).style.cssText = 'font-weight: 600; color: var(--text-normal);';
+			info.createEl('div', { text: new Date(session.date).toLocaleString() }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+			if (session.note) {
+				info.createEl('div', { text: `"${session.note}"` }).style.cssText = 'font-size: 12px; color: var(--text-muted); font-style: italic;';
+			}
+			
+			const actions = card.createEl('div');
+			actions.style.cssText = 'display: flex; gap: 8px;';
+			
+			const editBtn = actions.createEl('button', { text: 'Edit' });
+			editBtn.style.cssText = 'padding: 5px 10px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer;';
+			editBtn.onclick = () => this.editSession(session);
+			
+			const deleteBtn = actions.createEl('button', { text: 'Delete' });
+			deleteBtn.style.cssText = 'padding: 5px 10px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;';
+			deleteBtn.onclick = () => this.deleteSession(session.id);
+		});
+	}
+	
+	editSession(session) {
+		this.close();
+		new EditSingleQuranModal(this.plugin, session).open();
+	}
+	
+	async deleteSession(sessionId) {
+		const sessions = this.plugin.settings.quranProgress.readingSessions;
+		const index = sessions.findIndex(s => s.id === sessionId);
+		if (index !== -1) {
+			sessions.splice(index, 1);
+			await this.plugin.saveSettings();
+			new Notice('Reading session deleted');
+			this.display();
+		}
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class EditSingleQuranModal extends Modal {
+	constructor(plugin, session) {
+		super(plugin.app);
+		this.plugin = plugin;
+		this.session = session;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Edit Reading Session' });
+		
+		const form = contentEl.createEl('form');
+		
+		const juzInput = form.createEl('input');
+		juzInput.type = 'number';
+		juzInput.placeholder = 'Juz (0-30)';
+		juzInput.value = this.session.juz.toString();
+		juzInput.min = '0';
+		juzInput.max = '30';
+		
+		const hizbInput = form.createEl('input');
+		hizbInput.type = 'number';
+		hizbInput.placeholder = 'Hizb (0-1)';
+		hizbInput.value = this.session.hizb.toString();
+		hizbInput.min = '0';
+		hizbInput.max = '1';
+		
+		const rubuInput = form.createEl('input');
+		rubuInput.type = 'number';
+		rubuInput.placeholder = 'Rubu (0-3)';
+		rubuInput.value = this.session.rubu.toString();
+		rubuInput.min = '0';
+		rubuInput.max = '3';
+		
+		const tumunInput = form.createEl('input');
+		tumunInput.type = 'number';
+		tumunInput.placeholder = 'Tumun (0-1)';
+		tumunInput.value = this.session.tumun.toString();
+		tumunInput.min = '0';
+		tumunInput.max = '1';
+		
+		const noteInput = form.createEl('textarea');
+		noteInput.placeholder = 'Optional note';
+		noteInput.value = this.session.note || '';
+		noteInput.style.cssText = 'width: 100%; height: 60px; resize: vertical; margin: 10px 0;';
+		
+		const submitBtn = form.createEl('button');
+		submitBtn.textContent = 'Update Reading';
+		submitBtn.type = 'submit';
+		submitBtn.style.cssText = 'background: #3b82f6; color: white; padding: 10px 20px; border: none; border-radius: 4px;';
+		
+		form.onsubmit = async (e) => {
+			e.preventDefault();
+			const juz = parseInt(juzInput.value) || 0;
+			const hizb = parseInt(hizbInput.value) || 0;
+			const rubu = parseInt(rubuInput.value) || 0;
+			const tumun = parseInt(tumunInput.value) || 0;
+			const note = noteInput.value.trim();
+			
+			const totalTumun = this.plugin.convertToTumun(juz, hizb, rubu, tumun);
+			
+			if (totalTumun > 0) {
+				const sessions = this.plugin.settings.quranProgress.readingSessions;
+				const index = sessions.findIndex(s => s.id === this.session.id);
+				if (index !== -1) {
+					sessions[index] = {
+						...this.session,
+						juz,
+						hizb,
+						rubu,
+						tumun,
+						note,
+						totalTumun
+					};
+					await this.plugin.saveSettings();
+					new Notice('Reading session updated');
+					this.close();
+				}
+			} else {
+				new Notice('Please enter a valid reading amount');
+			}
+		};
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class QuranCompletionsModal extends Modal {
+	constructor(plugin) {
+		super(plugin.app);
+		this.plugin = plugin;
+		this.currentPage = 0;
+		this.itemsPerPage = 5;
+	}
+	
+	display() {
+		const { contentEl } = this;
+		contentEl.empty();
+		
+		const title = contentEl.createEl('h2', { text: 'Quran Completions' });
+		title.style.cssText = 'text-align: center; margin-bottom: 20px; color: var(--text-accent);';
+		
+		const completions = this.plugin.settings.quranProgress.completions || [];
+		
+		if (completions.length === 0) {
+			contentEl.createEl('p', { text: 'No Quran completions yet. Keep reading to complete your first Khatm!' });
+			return;
+		}
+		
+		// Summary
+		const summaryCard = contentEl.createEl('div');
+		summaryCard.style.cssText = 'background: var(--background-secondary); padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 20px; border-left: 4px solid #22c55e;';
+		summaryCard.createEl('div', { text: completions.length.toString() }).style.cssText = 'font-size: 32px; font-weight: bold; color: var(--text-accent);';
+		summaryCard.createEl('div', { text: 'Total Completions' }).style.cssText = 'font-size: 14px; color: var(--text-muted);';
+		
+		// Pagination
+		const totalPages = Math.ceil(completions.length / this.itemsPerPage);
+		const startIndex = this.currentPage * this.itemsPerPage;
+		const endIndex = startIndex + this.itemsPerPage;
+		const currentCompletions = completions.slice(startIndex, endIndex);
+		
+		// Pagination Controls
+		if (totalPages > 1) {
+			const paginationTop = contentEl.createEl('div');
+			paginationTop.style.cssText = 'display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 15px;';
+			
+			const prevBtn = paginationTop.createEl('button', { text: '← Previous' });
+			prevBtn.style.cssText = 'padding: 8px 12px; background: var(--interactive-accent); color: var(--text-on-accent); border: none; border-radius: 4px; cursor: pointer;';
+			prevBtn.disabled = this.currentPage === 0;
+			if (prevBtn.disabled) prevBtn.style.opacity = '0.5';
+			prevBtn.onclick = () => {
+				this.currentPage--;
+				this.display();
+			};
+			
+			const pageInfo = paginationTop.createEl('span');
+			pageInfo.textContent = `Page ${this.currentPage + 1} of ${totalPages}`;
+			pageInfo.style.cssText = 'font-weight: 500; color: var(--text-normal);';
+			
+			const nextBtn = paginationTop.createEl('button', { text: 'Next →' });
+			nextBtn.style.cssText = 'padding: 8px 12px; background: var(--interactive-accent); color: var(--text-on-accent); border: none; border-radius: 4px; cursor: pointer;';
+			nextBtn.disabled = this.currentPage === totalPages - 1;
+			if (nextBtn.disabled) nextBtn.style.opacity = '0.5';
+			nextBtn.onclick = () => {
+				this.currentPage++;
+				this.display();
+			};
+		}
+		
+		// Completions List
+		const completionsContainer = contentEl.createEl('div');
+		completionsContainer.style.cssText = 'display: grid; gap: 10px;';
+		
+		currentCompletions.forEach((completion, pageIndex) => {
+			const actualIndex = startIndex + pageIndex;
+			const card = completionsContainer.createEl('div');
+			card.style.cssText = `
+				background: var(--background-secondary);
+				border-radius: 8px;
+				padding: 15px;
+				border-left: 4px solid #22c55e;
+				cursor: pointer;
+				transition: transform 0.2s ease;
+			`;
+			
+			card.onmouseover = () => card.style.transform = 'translateY(-2px)';
+			card.onmouseout = () => card.style.transform = 'translateY(0)';
+			card.onclick = () => {
+				this.close();
+				new CompletionDetailModal(this.plugin, completion, actualIndex + 1).open();
+			};
+			
+			const header = card.createEl('div');
+			header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;';
+			
+			const titleEl = header.createEl('div');
+			titleEl.style.cssText = 'font-weight: 600; color: var(--text-normal);';
+			titleEl.textContent = `Completion ${actualIndex + 1}`;
+			
+			const sessionsCount = header.createEl('div');
+			sessionsCount.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+			sessionsCount.textContent = `${completion.sessions.length} sessions`;
+			
+			const dateRange = card.createEl('div');
+			dateRange.style.cssText = 'font-size: 14px; color: var(--text-muted);';
+			const startDate = new Date(completion.startDate).toLocaleDateString();
+			const endDate = new Date(completion.endDate).toLocaleDateString();
+			dateRange.textContent = `${startDate} → ${endDate}`;
+			
+			// Duration
+			const duration = Math.ceil((new Date(completion.endDate) - new Date(completion.startDate)) / (1000 * 60 * 60 * 24));
+			const durationEl = card.createEl('div');
+			durationEl.style.cssText = 'font-size: 12px; color: var(--text-accent); margin-top: 5px;';
+			durationEl.textContent = `${duration} days`;
+		});
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.style.cssText = 'padding: 20px; max-width: 600px;';
+		this.display();
+	}
+	
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class CompletionDetailModal extends Modal {
+	constructor(plugin, completion, completionNumber) {
+		super(plugin.app);
+		this.plugin = plugin;
+		this.completion = completion;
+		this.completionNumber = completionNumber;
+	}
+	
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.style.cssText = 'padding: 20px; max-width: 700px;';
+		
+		const title = contentEl.createEl('h2', { text: `Completion ${this.completionNumber} Details` });
+		title.style.cssText = 'text-align: center; margin-bottom: 20px; color: var(--text-accent);';
+		
+		// Summary
+		const summaryContainer = contentEl.createEl('div');
+		summaryContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;';
+		
+		const startCard = summaryContainer.createEl('div');
+		startCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		startCard.createEl('div', { text: new Date(this.completion.startDate).toLocaleDateString() }).style.cssText = 'font-weight: bold; color: var(--text-accent);';
+		startCard.createEl('div', { text: 'Start Date' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		const endCard = summaryContainer.createEl('div');
+		endCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		endCard.createEl('div', { text: new Date(this.completion.endDate).toLocaleDateString() }).style.cssText = 'font-weight: bold; color: var(--text-accent);';
+		endCard.createEl('div', { text: 'End Date' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		const durationCard = summaryContainer.createEl('div');
+		durationCard.style.cssText = 'background: var(--background-secondary); padding: 15px; border-radius: 8px; text-align: center;';
+		const duration = Math.ceil((new Date(this.completion.endDate) - new Date(this.completion.startDate)) / (1000 * 60 * 60 * 24));
+		durationCard.createEl('div', { text: `${duration} days` }).style.cssText = 'font-weight: bold; color: var(--text-accent);';
+		durationCard.createEl('div', { text: 'Duration' }).style.cssText = 'font-size: 12px; color: var(--text-muted);';
+		
+		// Reading Sessions
+		contentEl.createEl('h3', { text: 'Reading Sessions' }).style.cssText = 'margin-bottom: 15px;';
+		
+		const sessionsContainer = contentEl.createEl('div');
+		sessionsContainer.style.cssText = 'display: grid; gap: 8px; max-height: 300px; overflow-y: auto;';
+		
+		this.completion.sessions.forEach(session => {
+			const sessionCard = sessionsContainer.createEl('div');
+			sessionCard.style.cssText = `
+				background: var(--background-secondary);
+				border-radius: 6px;
+				padding: 12px;
+				border-left: 3px solid #22c55e;
+			`;
+			
+			const sessionHeader = sessionCard.createEl('div');
+			sessionHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;';
+			
+			const readingText = sessionHeader.createEl('div');
+			readingText.style.cssText = 'font-weight: 500; color: var(--text-normal);';
+			readingText.textContent = `${session.juz}J ${session.hizb}H ${session.rubu}R ${session.tumun}T`;
+			
+			const dateText = sessionHeader.createEl('div');
+			dateText.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+			dateText.textContent = new Date(session.date).toLocaleString();
+			
+			if (session.note) {
+				const noteText = sessionCard.createEl('div');
+				noteText.style.cssText = 'font-size: 12px; color: var(--text-muted); font-style: italic;';
+				noteText.textContent = `"${session.note}"`;
+			}
+			
+			const tumunText = sessionCard.createEl('div');
+			tumunText.style.cssText = 'font-size: 11px; color: var(--text-accent); margin-top: 3px;';
+			tumunText.textContent = `${session.totalTumun} tumun`;
+		});
+		
+		// Back button
+		const backBtn = contentEl.createEl('button', { text: 'Back to Completions' });
+		backBtn.style.cssText = 'margin-top: 20px; padding: 10px 20px; background: var(--interactive-accent); color: var(--text-on-accent); border: none; border-radius: 4px; cursor: pointer;';
+		backBtn.onclick = () => {
+			this.close();
+			new QuranCompletionsModal(this.plugin).open();
 		};
 	}
 	

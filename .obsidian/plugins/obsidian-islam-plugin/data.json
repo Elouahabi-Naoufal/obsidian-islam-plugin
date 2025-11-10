@@ -18,6 +18,30 @@
     "maghrib": 7,
     "isha": 7
   },
+  "quranProgress": {
+    "totalTumun": 19,
+    "readingSessions": [],
+    "completions": [
+      {
+        "id": 1762589895289,
+        "startDate": "2025-11-08T08:18:15.289Z",
+        "endDate": "2025-11-08T08:18:15.289Z",
+        "sessions": [
+          {
+            "id": 1762589895289,
+            "date": "2025-11-08T08:18:15.289Z",
+            "juz": 30,
+            "hizb": 0,
+            "rubu": 0,
+            "tumun": 0,
+            "note": "",
+            "totalTumun": 480
+          }
+        ]
+      }
+    ],
+    "currentCompletionId": null
+  },
   "progressHistory": [
     {
       "date": "2025-11-06T21:56:37.013Z",
@@ -46,6 +70,20 @@
       "salah": "dhuhr",
       "count": 10,
       "type": "old"
+    },
+    {
+      "date": "2025-11-07T19:39:58.816Z",
+      "action": "read",
+      "salah": "quran",
+      "count": 19,
+      "type": "tumun"
+    },
+    {
+      "date": "2025-11-08T08:18:15.289Z",
+      "action": "read",
+      "salah": "quran",
+      "count": 480,
+      "type": "tumun"
     }
   ]
 }
